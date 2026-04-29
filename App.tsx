@@ -1,4 +1,4 @@
-import { NenShellApp } from './src/app/NenShellApp';
+import { NenShellApp } from './src/shell/NenShellApp';
 
 export default function App() {
   return <NenShellApp />;
