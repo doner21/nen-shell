@@ -27,7 +27,13 @@ export function BriefScreen() {
           <Text style={styles.cardTitle}>{section.title}</Text>
           <Text style={styles.body}>{section.body}</Text>
           {state.briefItems
-            .filter((item) => section.sources.some((source) => source.toLowerCase().includes(item.source_type) || item.source_name === source || source === 'Pi Code'))
+            .filter((item) =>
+              (item.source_type === 'email' && section.sources.includes('Gmail')) ||
+              (item.source_type === 'message' && section.sources.includes('Telegram')) ||
+              (item.source_type === 'calendar' && section.sources.includes('Calendar')) ||
+              (item.source_type === 'file' && section.sources.includes('File')) ||
+              (item.source_type === 'system' && section.sources.includes('System')),
+            )
             .slice(0, 2)
             .map((item) => <BriefItemCard key={`${section.id}-${item.id}`} item={item} />)}
         </CalmCard>
