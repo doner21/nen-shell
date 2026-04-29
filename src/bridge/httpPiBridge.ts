@@ -120,18 +120,39 @@ const createFetchJson = (baseUrl: string) => async (path: string, options: Fetch
 const normalizeSource = (value: unknown, fallback: SourceLabel = 'Pi Code'): SourceLabel =>
   pickLiteral(value, sourceLabels, fallback);
 
+const defaultRiskForKind = (kind: ActionKind): ActionRisk => {
+  switch (kind) {
+    case 'send_message':
+      return 'risky_send';
+    case 'modify_file':
+    case 'delete_file':
+      return 'risky_file';
+    case 'system_change':
+      return 'risky_system';
+    case 'root_command':
+      return 'root';
+    case 'draft_reply':
+    case 'schedule_reminder':
+      return 'requires_confirmation';
+    case 'summarize':
+      return 'low';
+  }
+};
+
 const normalizeSuggestedAction = (value: unknown): SuggestedAction | undefined => {
   if (!isRecord(value)) {
     return undefined;
   }
 
+  const kind = pickLiteral(value.kind, actionKinds, 'summarize');
+
   return {
     id: normalizedString(value.id, makeId('action')),
-    kind: pickLiteral(value.kind, actionKinds, 'summarize'),
+    kind,
     title: normalizedString(value.title, 'Suggested action'),
     description: normalizedString(value.description, 'The bridge returned an action without a description.'),
     source: normalizeSource(value.source),
-    risk: pickLiteral(value.risk, actionRisks, 'low'),
+    risk: pickLiteral(value.risk, actionRisks, defaultRiskForKind(kind)),
     createdAt: normalizedString(value.createdAt ?? value.created_at, nowIso()),
   };
 };
