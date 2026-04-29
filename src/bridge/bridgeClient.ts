@@ -1,4 +1,4 @@
-import { mockPiBridge } from './mockPiBridge';
+import { httpPiBridge } from './httpPiBridge';
 
-// TODO(real-pi-code-bridge): replace mock with local HTTP/WebSocket Pi Code bridge.
-export const piBridge = mockPiBridge;
+// HTTP client contains mock fallback for offline or malformed local bridge responses.
+export const piBridge = httpPiBridge;
