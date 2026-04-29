@@ -185,6 +185,7 @@ export type ShellState = {
   scheduler: SchedulerSnapshot;
   connectors: ConnectorStatus[];
   brief: BriefSection[];
+  briefItems: BriefItem[];
   priorities: PriorityItem[];
   todaySummary: string;
   scheduleSummary: string;
