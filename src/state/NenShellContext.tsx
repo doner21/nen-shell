@@ -56,7 +56,7 @@ export function NenShellProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'SEND_MESSAGE_REQUEST', message });
 
         try {
-          const result = await piBridge.sendAgentMessage({ text: clean });
+          const result = await piBridge.sendAgentMessage({ message: clean, context: {} });
           dispatch({ type: 'SEND_MESSAGE_SUCCESS', result });
         } catch (error) {
           const detail = error instanceof Error ? error.message : 'Unknown mock bridge failure.';
