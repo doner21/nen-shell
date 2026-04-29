@@ -1,6 +1,8 @@
 import { getCalendarConnectorStatus } from '../connectors/calendarConnector';
 import { getGmailConnectorStatus } from '../connectors/gmailConnector';
 import { getTelegramConnectorStatus } from '../connectors/telegramConnector';
+import { getFileConnectorStatus } from '../connectors/fileConnector';
+import { getSystemHeartbeatStatus } from '../connectors/systemConnector';
 import { mockBriefSections, mockPriorities } from './mockBrief';
 import { getMockSchedulerSnapshot } from '../scheduler/mockScheduler';
 import { ShellState } from '../types/domain';
@@ -26,7 +28,13 @@ export const createInitialState = (): ShellState => {
       latencyMs: 80,
     },
     scheduler: getMockSchedulerSnapshot(),
-    connectors: [getGmailConnectorStatus(), getTelegramConnectorStatus(), getCalendarConnectorStatus()],
+    connectors: [
+      getGmailConnectorStatus(),
+      getTelegramConnectorStatus(),
+      getCalendarConnectorStatus(),
+      getFileConnectorStatus(),
+      getSystemHeartbeatStatus(),
+    ],
     brief: mockBriefSections,
     priorities: mockPriorities,
     todaySummary: 'A narrow, quiet day: observe first, draft second, ask before acting.',
