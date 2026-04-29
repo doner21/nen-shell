@@ -49,6 +49,7 @@ export function NenShellProvider({ children }: { children: ReactNode }) {
           id: makeId('msg'),
           role: 'user',
           text: clean,
+          created_at: nowIso(),
           createdAt: nowIso(),
         };
 
