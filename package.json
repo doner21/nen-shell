@@ -4,6 +4,7 @@
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
+    "bridge": "node tools/pi-bridge-server/server.cjs",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
