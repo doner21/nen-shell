@@ -15,7 +15,7 @@ export type ConnectorStatus = {
   last_checked: string;
 
   /** UI compatibility fields for this first local-state implementation. */
-  source: Exclude<SourceLabel, 'Pi Code' | 'System' | 'Scheduler'>;
+  source: SourceLabel;
   state: 'mock' | 'healthy' | 'paused' | 'needs_permission';
   detail: string;
   lastCheckedAt: string;
