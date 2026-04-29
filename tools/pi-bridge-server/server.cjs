@@ -68,14 +68,19 @@ const json = (res, statusCode, payload, headers = {}) => {
   res.end(body);
 };
 
-const jsonError = (res, statusCode, code, message, details = {}) =>
-  json(res, statusCode, {
-    error: {
-      code,
-      message,
-      ...details,
+const jsonError = (res, statusCode, code, message, details = {}, headers = {}) =>
+  json(
+    res,
+    statusCode,
+    {
+      error: {
+        code,
+        message,
+        ...details,
+      },
     },
-  });
+    headers,
+  );
 
 const readJsonBody = (req) =>
   new Promise((resolve, reject) => {
