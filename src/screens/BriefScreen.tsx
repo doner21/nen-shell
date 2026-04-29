@@ -1,5 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { BriefItemCard } from '../components/BriefItemCard';
 import { CalmCard } from '../components/CalmCard';
 import { FieldPill } from '../components/FieldPill';
 import { useNenShell } from '../state/NenShellContext';
@@ -25,6 +26,10 @@ export function BriefScreen() {
           </View>
           <Text style={styles.cardTitle}>{section.title}</Text>
           <Text style={styles.body}>{section.body}</Text>
+          {state.briefItems
+            .filter((item) => section.sources.some((source) => source.toLowerCase().includes(item.source_type) || item.source_name === source || source === 'Pi Code'))
+            .slice(0, 2)
+            .map((item) => <BriefItemCard key={`${section.id}-${item.id}`} item={item} />)}
         </CalmCard>
       ))}
     </View>
