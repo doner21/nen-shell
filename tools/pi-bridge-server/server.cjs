@@ -188,6 +188,7 @@ const invokePi = (message, context) =>
       shell: false,
       windowsHide: true,
       env: process.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
 
     let stdout = '';
