@@ -3,7 +3,7 @@ import { getGmailConnectorStatus } from '../connectors/gmailConnector';
 import { getTelegramConnectorStatus } from '../connectors/telegramConnector';
 import { getFileConnectorStatus } from '../connectors/fileConnector';
 import { getSystemHeartbeatStatus } from '../connectors/systemConnector';
-import { mockBriefSections, mockPriorities } from './mockBrief';
+import { mockBriefItems, mockBriefSections, mockPriorities } from './mockBrief';
 import { getMockSchedulerSnapshot } from '../scheduler/mockScheduler';
 import { ShellState } from '../types/domain';
 import { makeId } from '../utils/ids';
@@ -36,6 +36,7 @@ export const createInitialState = (): ShellState => {
       getSystemHeartbeatStatus(),
     ],
     brief: mockBriefSections,
+    briefItems: mockBriefItems,
     priorities: mockPriorities,
     todaySummary: 'A narrow, quiet day: observe first, draft second, ask before acting.',
     scheduleSummary: 'One meeting ahead, one protected focus block, approvals swept every 20 minutes.',
