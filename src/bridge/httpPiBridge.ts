@@ -156,10 +156,12 @@ const normalizeAuditEntry = (value: unknown): AuditEntry | undefined => {
   };
 };
 
-const normalizeAuditEntries = (value: unknown): AuditEntry[] =>
+const normalizeAuditEntryArray = (value: unknown): AuditEntry[] | undefined =>
   extractArray(value, ['auditEntries', 'audit_entries', 'audit'])
     ?.map(normalizeAuditEntry)
-    .filter((entry): entry is AuditEntry => Boolean(entry)) ?? [];
+    .filter((entry): entry is AuditEntry => Boolean(entry));
+
+const normalizeAuditEntries = (value: unknown): AuditEntry[] => normalizeAuditEntryArray(value) ?? [];
 
 const normalizeAgentTurn = (value: unknown): AgentTurnResult | undefined => {
   if (!isRecord(value) || !isRecord(value.reply)) {
@@ -347,7 +349,7 @@ export const createHttpPiBridge = (baseUrl = DEFAULT_PI_BRIDGE_BASE_URL): PiBrid
     async getAgentAudit(): Promise<AuditEntry[]> {
       try {
         const payload = await fetchJson('/agent/audit');
-        return normalizeAuditEntries(payload) ?? mockPiBridge.getAgentAudit();
+        return normalizeAuditEntryArray(payload) ?? mockPiBridge.getAgentAudit();
       } catch {
         return mockPiBridge.getAgentAudit();
       }
