@@ -8,10 +8,21 @@ const { randomUUID } = require('node:crypto');
 
 const repoRoot = path.resolve(__dirname, '..', '..');
 
+const defaultPiCliJs = path.join(
+  process.env.APPDATA || path.join(process.env.USERPROFILE || '', 'AppData', 'Roaming'),
+  'npm',
+  'node_modules',
+  '@mariozechner',
+  'pi-coding-agent',
+  'dist',
+  'cli.js',
+);
+
 const config = {
   host: process.env.PI_BRIDGE_HOST || '127.0.0.1',
   port: Number.parseInt(process.env.PI_BRIDGE_PORT || '31415', 10),
-  piCommand: process.env.PI_BRIDGE_PI_COMMAND || 'pi',
+  piCommand: process.env.PI_BRIDGE_PI_COMMAND || process.execPath,
+  piCliJs: process.env.PI_BRIDGE_PI_CLI_JS || defaultPiCliJs,
   piProvider: process.env.PI_BRIDGE_PI_PROVIDER || 'google-gemini-cli',
   piModel: process.env.PI_BRIDGE_PI_MODEL || 'gemini-2.5-flash',
   timeoutMs: Number.parseInt(process.env.PI_BRIDGE_TIMEOUT_MS || '120000', 10),
@@ -129,7 +140,13 @@ const buildPrompt = (message, context) => {
 };
 
 const buildPiArgs = (prompt) => {
-  const args = ['--mode', 'text'];
+  const args = [];
+
+  if (!process.env.PI_BRIDGE_PI_COMMAND) {
+    args.push(config.piCliJs);
+  }
+
+  args.push('--mode', 'text');
 
   if (config.piProvider) {
     args.push('--provider', config.piProvider);
@@ -168,7 +185,7 @@ const invokePi = (message, context) =>
     const args = buildPiArgs(prompt);
     const child = spawn(config.piCommand, args, {
       cwd: repoRoot,
-      shell: process.platform === 'win32',
+      shell: false,
       windowsHide: true,
       env: process.env,
     });
@@ -253,6 +270,7 @@ const handleHealth = (req, res) => {
     checkedAt: nowIso(),
     latencyMs: 0,
     piCommand: config.piCommand,
+    piCliJs: process.env.PI_BRIDGE_PI_COMMAND ? undefined : config.piCliJs,
     piProvider: config.piProvider,
     piModel: config.piModel,
     safeDefaults: {
@@ -481,6 +499,8 @@ server.on('error', (error) => {
 server.listen(config.port, config.host, () => {
   console.log(`[pi-bridge] Listening on http://${config.host}:${config.port}`);
   console.log(`[pi-bridge] Repo root: ${repoRoot}`);
-  console.log(`[pi-bridge] Pi command: ${config.piCommand} --provider ${config.piProvider} --model ${config.piModel}`);
+  console.log(
+    `[pi-bridge] Pi command: ${config.piCommand}${process.env.PI_BRIDGE_PI_COMMAND ? '' : ` ${config.piCliJs}`} --provider ${config.piProvider} --model ${config.piModel}`,
+  );
   console.log('[pi-bridge] Safe defaults enabled. Set PI_BRIDGE_ALLOW_TOOLS=1 only if you explicitly want phone prompts to use Pi tools.');
 });
