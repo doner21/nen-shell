@@ -1,7 +1,10 @@
-import { AgentTurnResult, ApprovalTask, BridgeHealth, SchedulerSnapshot } from '../types/domain';
+import { AgentTask, AgentTurnResult, ApprovalTask, AuditEntry, BridgeHealth, SchedulerSnapshot } from '../types/domain';
 
 export type SendAgentMessageInput = {
-  text: string;
+  message: string;
+  context?: Record<string, unknown>;
+  /** UI compatibility; normalized to message by mock bridge. */
+  text?: string;
 };
 
 export type ActionDecisionResult = {
@@ -15,10 +18,19 @@ export type PiBridgeClient = {
   getHealth(): Promise<BridgeHealth>;
   /** POST /agent/message */
   sendAgentMessage(input: SendAgentMessageInput): Promise<AgentTurnResult>;
-  /** GET /scheduler/jobs */
+  /** GET /agent/tasks */
+  getAgentTasks(): Promise<AgentTask[]>;
+  /** POST /agent/approve */
+  approveAgentTask(task: ApprovalTask): Promise<ActionDecisionResult>;
+  /** POST /agent/reject */
+  rejectAgentTask(task: ApprovalTask): Promise<ActionDecisionResult>;
+  /** GET /agent/audit */
+  getAgentAudit(): Promise<AuditEntry[]>;
+
+  /** GET /scheduler/jobs - local placeholder until Android WorkManager/foreground service integration. */
   getSchedulerSnapshot(): Promise<SchedulerSnapshot>;
-  /** POST /actions/:id/approve */
+
+  /** Backwards-compatible aliases used by the first UI slice. */
   approveAction(task: ApprovalTask): Promise<ActionDecisionResult>;
-  /** POST /actions/:id/reject */
   rejectAction(task: ApprovalTask): Promise<ActionDecisionResult>;
 };
