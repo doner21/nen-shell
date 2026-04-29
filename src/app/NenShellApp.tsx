@@ -1,0 +1,72 @@
+import { StatusBar } from 'expo-status-bar';
+import React from 'react';
+import { KeyboardAvoidingView, Platform, SafeAreaView, ScrollView, StyleSheet, View } from 'react-native';
+import { BottomNav } from '../components/BottomNav';
+import { BriefScreen } from '../screens/BriefScreen';
+import { HomeScreen } from '../screens/HomeScreen';
+import { SystemScreen } from '../screens/SystemScreen';
+import { TasksScreen } from '../screens/TasksScreen';
+import { NenShellProvider, useNenShell } from '../state/NenShellContext';
+import { selectPendingTasks } from '../state/selectors';
+import { colors } from '../theme/tokens';
+
+function ActiveScreen() {
+  const { state, actions } = useNenShell();
+  const pendingCount = selectPendingTasks(state).length;
+
+  const renderScreen = () => {
+    switch (state.activeTab) {
+      case 'brief':
+        return <BriefScreen />;
+      case 'tasks':
+        return <TasksScreen />;
+      case 'system':
+        return <SystemScreen />;
+      case 'home':
+      default:
+        return <HomeScreen />;
+    }
+  };
+
+  return (
+    <SafeAreaView style={styles.safe}>
+      <StatusBar style="light" />
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View style={styles.frame}>
+          <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+            {renderScreen()}
+          </ScrollView>
+          <BottomNav activeTab={state.activeTab} pendingCount={pendingCount} onChange={actions.setActiveTab} />
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+}
+
+export function NenShellApp() {
+  return (
+    <NenShellProvider>
+      <ActiveScreen />
+    </NenShellProvider>
+  );
+}
+
+const styles = StyleSheet.create({
+  safe: {
+    backgroundColor: colors.ink,
+    flex: 1,
+  },
+  flex: {
+    flex: 1,
+  },
+  frame: {
+    backgroundColor: colors.ink,
+    flex: 1,
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+  },
+});
