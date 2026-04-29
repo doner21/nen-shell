@@ -41,7 +41,8 @@ export const createInitialState = (): ShellState => {
     scheduleSummary: 'One meeting ahead, one protected focus block, approvals swept every 20 minutes.',
     attentionCounts: {
       approvals: 0,
-      calendar: 1,
+      emails: 1,
+      calendar: 2,
       messages: 3,
     },
     messages: [],
