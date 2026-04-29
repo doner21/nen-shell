@@ -1,8 +1,20 @@
 export type TabId = 'home' | 'brief' | 'tasks' | 'system';
 
-export type SourceLabel = 'Gmail' | 'Telegram' | 'Calendar' | 'Pi Code' | 'System' | 'Scheduler';
+export type SourceLabel = 'Gmail' | 'Telegram' | 'Calendar' | 'File' | 'Pi Code' | 'System' | 'Scheduler';
+
+export type SourceType = 'email' | 'message' | 'calendar' | 'file' | 'system';
+export type Priority = 'low' | 'normal' | 'high';
+export type RiskLevel = 'low' | 'medium' | 'high' | 'root';
 
 export type ConnectorStatus = {
+  /** Required model field for the real connector registry. */
+  id: string;
+  name: string;
+  type: SourceType;
+  status: 'connected' | 'disconnected' | 'degraded' | 'mock';
+  last_checked: string;
+
+  /** UI compatibility fields for this first local-state implementation. */
   source: Exclude<SourceLabel, 'Pi Code' | 'System' | 'Scheduler'>;
   state: 'mock' | 'healthy' | 'paused' | 'needs_permission';
   detail: string;
@@ -36,6 +48,11 @@ export type AgentMessage = {
   id: string;
   role: 'user' | 'assistant' | 'system';
   text: string;
+  /** Required model field for the bridge contract. */
+  created_at: string;
+  source_refs?: string[];
+
+  /** UI compatibility field for React state ergonomics. */
   createdAt: string;
 };
 
@@ -72,7 +89,36 @@ export type SuggestedAction = {
   createdAt: string;
 };
 
-export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'blocked';
+export type BriefItem = {
+  id: string;
+  title: string;
+  summary: string;
+  source_type: SourceType;
+  source_name?: string;
+  priority: Priority;
+  actions: ActionKind[];
+};
+
+export type AgentTask = {
+  id: string;
+  title: string;
+  description: string;
+  status: 'pending' | 'approved' | 'rejected' | 'completed' | 'failed';
+  risk_level: RiskLevel;
+  requires_approval: boolean;
+  created_at: string;
+};
+
+export type PermissionCapability = {
+  id: string;
+  name: string;
+  scope: string;
+  enabled: boolean;
+  requires_confirmation: boolean;
+  risk_level: RiskLevel;
+};
+
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'blocked' | 'completed' | 'failed';
 
 export type ApprovalTask = {
   id: string;
