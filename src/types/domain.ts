@@ -173,6 +173,7 @@ export type PriorityItem = {
 
 export type AttentionCounts = {
   approvals: number;
+  emails: number;
   calendar: number;
   messages: number;
 };
