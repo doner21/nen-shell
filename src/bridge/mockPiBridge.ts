@@ -57,6 +57,7 @@ export const mockPiBridge: PiBridgeClient = {
         role: 'assistant',
         text: `I can hold this calmly: “${text}”. I prepared a local draft and queued any risky movement for approval instead of acting.`,
         summary: 'Mock Pi Code replied locally and created reviewable actions.',
+        created_at: createdAt,
         createdAt,
       },
       suggestedActions: actions,
