@@ -26,9 +26,9 @@ export function HomeScreen() {
       <SafeModeBanner enabled={state.permission.safeMode} />
 
       <View style={styles.metrics}>
-        <MetricTile label="Approvals" value={state.attentionCounts.approvals} detail="waiting calmly" />
-        <MetricTile label="Calendar" value={state.attentionCounts.calendar} detail="shape change" />
-        <MetricTile label="Messages" value={state.attentionCounts.messages} detail="digest only" />
+        <MetricTile label="Messages" value={state.attentionCounts.messages} detail="need attention" />
+        <MetricTile label="Emails" value={state.attentionCounts.emails} detail="important" />
+        <MetricTile label="Calendar" value={state.attentionCounts.calendar} detail="events today" />
       </View>
 
       <CalmCard>
