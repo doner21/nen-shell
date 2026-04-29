@@ -1,5 +1,5 @@
 import { getMockSchedulerSnapshot } from '../scheduler/mockScheduler';
-import { AgentTurnResult, ApprovalTask, BridgeHealth, SuggestedAction } from '../types/domain';
+import { AgentTask, AgentTurnResult, ApprovalTask, AuditEntry, BridgeHealth, SuggestedAction } from '../types/domain';
 import { makeId } from '../utils/ids';
 import { nowIso } from '../utils/time';
 import { ActionDecisionResult, PiBridgeClient, SendAgentMessageInput } from './piBridge.types';
@@ -48,7 +48,7 @@ export const mockPiBridge: PiBridgeClient = {
   async sendAgentMessage(input: SendAgentMessageInput): Promise<AgentTurnResult> {
     await wait(220);
     const createdAt = nowIso();
-    const text = input.text.trim();
+    const text = (input.message ?? input.text ?? '').trim();
     const actions = buildSuggestedActions(text);
 
     return {
@@ -82,12 +82,42 @@ export const mockPiBridge: PiBridgeClient = {
     };
   },
 
+  async getAgentTasks(): Promise<AgentTask[]> {
+    await wait(80);
+    const createdAt = nowIso();
+    return [
+      {
+        id: 'mock-agent-task-digest',
+        title: 'Summarize priority inbox',
+        description: 'Mock pending task returned through GET /agent/tasks.',
+        status: 'pending',
+        risk_level: 'low',
+        requires_approval: false,
+        created_at: createdAt,
+      },
+    ];
+  },
+
+  async getAgentAudit(): Promise<AuditEntry[]> {
+    await wait(80);
+    return [
+      {
+        id: makeId('audit'),
+        category: 'check',
+        title: 'Mock audit endpoint read',
+        detail: 'GET /agent/audit returned local audit rows; no external bridge was contacted.',
+        source: 'Pi Code',
+        createdAt: nowIso(),
+      },
+    ];
+  },
+
   async getSchedulerSnapshot() {
     await wait(80);
     return getMockSchedulerSnapshot();
   },
 
-  async approveAction(task: ApprovalTask): Promise<ActionDecisionResult> {
+  async approveAgentTask(task: ApprovalTask): Promise<ActionDecisionResult> {
     await wait(120);
     return {
       taskId: task.id,
@@ -96,12 +126,20 @@ export const mockPiBridge: PiBridgeClient = {
     };
   },
 
-  async rejectAction(task: ApprovalTask): Promise<ActionDecisionResult> {
+  async rejectAgentTask(task: ApprovalTask): Promise<ActionDecisionResult> {
     await wait(80);
     return {
       taskId: task.id,
       status: 'rejected',
       message: 'Mock rejection recorded. No external side effect occurred.',
     };
+  },
+
+  async approveAction(task: ApprovalTask): Promise<ActionDecisionResult> {
+    return this.approveAgentTask(task);
+  },
+
+  async rejectAction(task: ApprovalTask): Promise<ActionDecisionResult> {
+    return this.rejectAgentTask(task);
   },
 };
