@@ -1,6 +1,7 @@
 import { StatusBar } from 'expo-status-bar';
 import React from 'react';
-import { KeyboardAvoidingView, Platform, SafeAreaView, ScrollView, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { BottomNav } from '../components/BottomNav';
 import { BriefScreen } from '../screens/BriefScreen';
 import { HomeScreen } from '../screens/HomeScreen';
@@ -29,7 +30,7 @@ function ActiveScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <StatusBar style="light" />
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.frame}>
@@ -45,9 +46,11 @@ function ActiveScreen() {
 
 export function NenShellApp() {
   return (
-    <NenShellProvider>
-      <ActiveScreen />
-    </NenShellProvider>
+    <SafeAreaProvider>
+      <NenShellProvider>
+        <ActiveScreen />
+      </NenShellProvider>
+    </SafeAreaProvider>
   );
 }
 
