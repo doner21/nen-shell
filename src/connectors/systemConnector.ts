@@ -9,7 +9,7 @@ export const getSystemHeartbeatStatus = (): ConnectorStatus => {
     type: 'system',
     status: 'mock',
     last_checked: checked,
-    source: 'File',
+    source: 'System',
     state: 'mock',
     detail: 'Heartbeat is local and read-only. System actuators remain locked by default.',
     lastCheckedAt: checked,
