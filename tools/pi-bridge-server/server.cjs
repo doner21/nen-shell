@@ -3,6 +3,7 @@
 
 const http = require('node:http');
 const { spawn } = require('node:child_process');
+const { StringDecoder } = require('node:string_decoder');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 
@@ -23,8 +24,8 @@ const config = {
   port: Number.parseInt(process.env.PI_BRIDGE_PORT || '31415', 10),
   piCommand: process.env.PI_BRIDGE_PI_COMMAND || process.execPath,
   piCliJs: process.env.PI_BRIDGE_PI_CLI_JS || defaultPiCliJs,
-  piProvider: process.env.PI_BRIDGE_PI_PROVIDER || 'google-gemini-cli',
-  piModel: process.env.PI_BRIDGE_PI_MODEL || 'gemini-2.5-flash',
+  piProvider: process.env.PI_BRIDGE_PI_PROVIDER || 'deepseek',
+  piModel: process.env.PI_BRIDGE_PI_MODEL || 'deepseek-v4-flash',
   timeoutMs: Number.parseInt(process.env.PI_BRIDGE_TIMEOUT_MS || '120000', 10),
   maxBodyBytes: Number.parseInt(process.env.PI_BRIDGE_MAX_BODY_BYTES || '65536', 10),
   maxConcurrent: Number.parseInt(process.env.PI_BRIDGE_MAX_CONCURRENT || '1', 10),
@@ -33,6 +34,13 @@ const config = {
 
 const auditEntries = [];
 let activePiCalls = 0;
+
+// --- Persistent Pi RPC process state ---
+let piProc = null;               // child_process handle
+let piProcReady = false;         // true after process spawned and ready
+let currentRequest = null;       // { resolve, reject, fullText, timer, started }
+let piReadyResolve = null;       // resolves when piProcReady becomes true
+let currentModel = null;         // currently active { provider, modelId }
 
 const nowIso = () => new Date().toISOString();
 const makeId = (prefix) => `${prefix}_${randomUUID()}`;
@@ -144,134 +152,334 @@ const buildPrompt = (message, context) => {
   return parts.join('\n\n');
 };
 
-const buildPiArgs = (prompt) => {
-  const args = [];
+// ---------------------------------------------------------------------------
+// JSONL reader (LF-delimited only — NOT Node readline)
+// ---------------------------------------------------------------------------
 
-  if (!process.env.PI_BRIDGE_PI_COMMAND) {
-    args.push(config.piCliJs);
-  }
+const attachJsonlReader = (stream, onLine) => {
+  const decoder = new StringDecoder('utf8');
+  let buffer = '';
 
-  args.push('--mode', 'text');
+  stream.on('data', (chunk) => {
+    buffer += typeof chunk === 'string' ? chunk : decoder.write(chunk);
+    let newlineIndex;
+    while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
+      let line = buffer.slice(0, newlineIndex);
+      buffer = buffer.slice(newlineIndex + 1);
+      if (line.endsWith('\r')) line = line.slice(0, -1);
+      if (line.length > 0) onLine(line);
+    }
+  });
 
-  if (config.piProvider) {
-    args.push('--provider', config.piProvider);
-  }
-  if (config.piModel) {
-    args.push('--model', config.piModel);
-  }
-
-  if (process.env.PI_BRIDGE_ALLOW_TOOLS !== '1') {
-    args.push('--no-tools');
-  }
-  if (process.env.PI_BRIDGE_ALLOW_EXTENSIONS !== '1') {
-    args.push('--no-extensions');
-  }
-  if (process.env.PI_BRIDGE_ALLOW_SKILLS !== '1') {
-    args.push('--no-skills');
-  }
-  if (process.env.PI_BRIDGE_ALLOW_PROMPT_TEMPLATES !== '1') {
-    args.push('--no-prompt-templates');
-  }
-  if (process.env.PI_BRIDGE_ALLOW_THEMES !== '1') {
-    args.push('--no-themes');
-  }
-  if (process.env.PI_BRIDGE_ALLOW_CONTEXT_FILES !== '1') {
-    args.push('--no-context-files');
-  }
-
-  args.push('--no-session', ...parseExtraArgs(), '-p', prompt);
-  return args;
+  stream.on('end', () => {
+    buffer += decoder.end();
+    if (buffer.length > 0) {
+      let line = buffer.endsWith('\r') ? buffer.slice(0, -1) : buffer;
+      if (line.length > 0) onLine(line);
+    }
+  });
 };
 
-const invokePi = (message, context) =>
-  new Promise((resolve, reject) => {
-    const started = Date.now();
-    const prompt = buildPrompt(message, context);
-    const args = buildPiArgs(prompt);
-    const child = spawn(config.piCommand, args, {
-      cwd: repoRoot,
-      shell: false,
-      windowsHide: true,
-      env: process.env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+// ---------------------------------------------------------------------------
+// Persistent Pi RPC process lifecycle
+// ---------------------------------------------------------------------------
 
-    let stdout = '';
-    let stderr = '';
-    let timedOut = false;
+const startPiRpc = () => {
+  if (piProc) return;
 
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill('SIGTERM');
-    }, config.timeoutMs);
+  const rpcArgs = [];
+  if (!process.env.PI_BRIDGE_PI_COMMAND) rpcArgs.push(config.piCliJs);
+  rpcArgs.push('--mode', 'rpc');
 
-    child.stdout.on('data', (chunk) => {
-      stdout += chunk.toString('utf8');
-    });
+  if (config.piProvider) {
+    rpcArgs.push('--provider', config.piProvider);
+  }
+  if (config.piModel) {
+    rpcArgs.push('--model', config.piModel);
+  }
 
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk.toString('utf8');
-    });
+  // Tools are enabled by default. Set PI_BRIDGE_DISABLE_*=1 to opt out.
+  if (process.env.PI_BRIDGE_DISABLE_TOOLS === '1') {
+    rpcArgs.push('--no-tools');
+  }
+  if (process.env.PI_BRIDGE_DISABLE_EXTENSIONS === '1') {
+    rpcArgs.push('--no-extensions');
+  }
+  if (process.env.PI_BRIDGE_DISABLE_SKILLS === '1') {
+    rpcArgs.push('--no-skills');
+  }
+  if (process.env.PI_BRIDGE_DISABLE_PROMPT_TEMPLATES === '1') {
+    rpcArgs.push('--no-prompt-templates');
+  }
+  if (process.env.PI_BRIDGE_DISABLE_THEMES === '1') {
+    rpcArgs.push('--no-themes');
+  }
+  if (process.env.PI_BRIDGE_DISABLE_CONTEXT_FILES === '1') {
+    rpcArgs.push('--no-context-files');
+  }
+  // Backward compatibility: old PI_BRIDGE_ALLOW_* vars also honored.
+  // If ALLOW_ is explicitly '1', DISABLE_ has no effect for that flag.
+  if (process.env.PI_BRIDGE_ALLOW_TOOLS === '1') {
+    // explicitly allowed — remove --no-tools if DISABLE_ added it
+    const idx = rpcArgs.indexOf('--no-tools');
+    if (idx !== -1) rpcArgs.splice(idx, 1);
+  }
 
-    child.on('error', (error) => {
-      clearTimeout(timer);
-      reject({
-        kind: 'spawn_error',
-        message: error.message,
-        durationMs: Date.now() - started,
-        stdout: clip(stdout),
-        stderr: clip(stderr),
-      });
-    });
+  // Default to thinking off to avoid long silent reasoning phases on mobile.
+  // Override with PI_BRIDGE_THINKING=high (or any level) to re-enable.
+  const thinkingLevel = process.env.PI_BRIDGE_THINKING || 'off';
+  rpcArgs.push('--thinking', thinkingLevel);
 
-    child.on('close', (code, signal) => {
-      clearTimeout(timer);
-      const durationMs = Date.now() - started;
-      const text = stdout.trim();
+  rpcArgs.push('--no-session', ...parseExtraArgs());
 
-      if (timedOut) {
-        reject({
-          kind: 'timeout',
-          message: `Pi CLI timed out after ${config.timeoutMs}ms`,
-          durationMs,
-          stdout: clip(stdout),
-          stderr: clip(stderr),
-        });
-        return;
-      }
+  console.log(`[pi-bridge] Starting Pi RPC process: ${config.piCommand} ${rpcArgs.join(' ')}`);
 
-      if (code !== 0) {
-        reject({
-          kind: 'pi_failed',
-          message: `Pi CLI exited with code ${code}${signal ? ` signal ${signal}` : ''}`,
-          durationMs,
-          exitCode: code,
-          signal,
-          stdout: clip(stdout),
-          stderr: clip(stderr),
-        });
-        return;
-      }
+  // Track the initial model for the new process
+  currentModel = { provider: config.piProvider, modelId: config.piModel };
 
-      if (!text) {
-        reject({
-          kind: 'empty_output',
-          message: 'Pi CLI completed but returned empty stdout',
-          durationMs,
-          stdout: '',
-          stderr: clip(stderr),
-        });
-        return;
-      }
-
-      resolve({ text, stderr: clip(stderr), durationMs });
-    });
+  // Create a new ready promise for ensurePiRpc()
+  const readyPromise = new Promise((resolve) => {
+    piReadyResolve = resolve;
   });
+
+  const child = spawn(config.piCommand, rpcArgs, {
+    cwd: repoRoot,
+    shell: false,
+    windowsHide: true,
+    env: process.env,
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+
+  piProc = child;
+
+  // --- JSONL handler for stdout ---
+  attachJsonlReader(child.stdout, (line) => {
+    let event;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      console.error('[pi-bridge] Failed to parse RPC event:', line.slice(0, 200));
+      return;
+    }
+
+    // Signal readiness on first valid JSON line received
+    if (!piProcReady) {
+      piProcReady = true;
+      if (piReadyResolve) {
+        piReadyResolve();
+        piReadyResolve = null;
+      }
+      console.log('[pi-bridge] Pi RPC process connected and ready');
+    }
+
+    // Route to current request if one is active
+    if (currentRequest) {
+      // Reject on error response for the prompt command
+      if (event.type === 'response' && event.command === 'prompt' && event.success === false) {
+        currentRequest.reject({
+          kind: 'rpc_error',
+          message: event.error || 'Pi RPC rejected the prompt',
+          durationMs: Date.now() - currentRequest.started,
+        });
+        currentRequest = null;
+        return;
+      }
+
+      // Accumulate text deltas
+      if (
+        event.type === 'message_update' &&
+        event.assistantMessageEvent &&
+        event.assistantMessageEvent.type === 'text_delta'
+      ) {
+        currentRequest.fullText += event.assistantMessageEvent.delta;
+      }
+
+      // agent_end — resolve with accumulated text
+      if (event.type === 'agent_end') {
+        if (currentRequest.timer) clearTimeout(currentRequest.timer);
+        const durationMs = Date.now() - currentRequest.started;
+        const text = currentRequest.fullText.trim();
+        currentRequest.resolve({ text, stderr: '', durationMs });
+        currentRequest = null;
+      }
+    }
+  });
+
+  // --- stderr passthrough for diagnostics ---
+  child.stderr.on('data', (chunk) => {
+    console.error(`[pi-bridge] Pi RPC stderr: ${chunk.toString('utf8').trim()}`);
+  });
+
+  // --- Process crash / exit ---
+  child.on('error', (err) => {
+    console.error(`[pi-bridge] Pi RPC process error: ${err.message}`);
+    // handled by 'close' event
+  });
+
+  child.on('close', (code, signal) => {
+    console.error(`[pi-bridge] Pi RPC process exited (code=${code}, signal=${signal})`);
+    piProc = null;
+    piProcReady = false;
+    piReadyResolve = null;
+    currentModel = null;
+
+    if (currentRequest) {
+      currentRequest.reject({
+        kind: 'rpc_crashed',
+        message: `Pi RPC process exited during request (code=${code}, signal=${signal})`,
+        durationMs: Date.now() - currentRequest.started,
+      });
+      currentRequest = null;
+    }
+
+    setTimeout(() => {
+      console.log('[pi-bridge] Restarting Pi RPC process...');
+      startPiRpc();
+    }, 2000);
+  });
+};
+
+const ensurePiRpc = () => {
+  // Pi RPC mode does not emit any output on stdout until a prompt is sent.
+  // We cannot wait for the first JSON event as a "ready" signal — that would deadlock.
+  // Instead, we simply ensure the process is spawned and its stdio pipes are open.
+  if (!piProc) {
+    startPiRpc();
+  }
+
+  // Return a promise that resolves when the process is spawned (or fails fast).
+  return new Promise((resolve, reject) => {
+    const check = () => {
+      if (piProc) {
+        resolve();
+        return;
+      }
+      // If the process failed to spawn and was cleaned up, treat as error.
+      // piProc is set to null in the 'close' handler, so after 2s without a
+      // process we consider the spawn failed.
+      setTimeout(() => {
+        if (!piProc) {
+          reject(new Error('Pi RPC process failed to start'));
+        } else {
+          resolve();
+        }
+      }, 2000);
+    };
+    check();
+  });
+};
+
+// ---------------------------------------------------------------------------
+// invokePi — uses persistent RPC process (no spawn-per-request)
+// ---------------------------------------------------------------------------
+
+const invokePi = (message, context, requestedModel, requestedProvider) =>
+  new Promise((resolve, reject) => {
+    ensurePiRpc()
+      .then(() => {
+        const started = Date.now();
+        const prompt = buildPrompt(message, context);
+
+        // Determine if model switch is needed
+        const effectiveProvider = requestedProvider || config.piProvider || 'deepseek';
+        const effectiveModel = requestedModel || config.piModel || 'deepseek-v4-flash';
+        const needsModelSwitch =
+          (!currentModel || currentModel.provider !== effectiveProvider || currentModel.modelId !== effectiveModel);
+
+        currentRequest = {
+          resolve,
+          reject,
+          fullText: '',
+          timer: null,
+          started,
+        };
+
+        // Send the request (with optional set_model first)
+        const sendRequest = () => {
+          // Set timeout — abort the prompt but keep the RPC process alive
+          currentRequest.timer = setTimeout(() => {
+            if (currentRequest) {
+              // Send abort to Pi process
+              try {
+                piProc.stdin.write(JSON.stringify({ type: 'abort' }) + '\n');
+              } catch {
+                // stdin may be closed
+              }
+              const req = currentRequest;
+              currentRequest = null;
+              req.reject({
+                kind: 'timeout',
+                message: `Pi RPC timed out after ${config.timeoutMs}ms`,
+                durationMs: Date.now() - started,
+                stdout: clip(req.fullText),
+                stderr: '',
+              });
+            }
+          }, config.timeoutMs);
+
+          // Write the prompt as JSONL to Pi stdin
+          try {
+            piProc.stdin.write(JSON.stringify({ type: 'prompt', message: prompt }) + '\n');
+          } catch (err) {
+            clearTimeout(currentRequest.timer);
+            currentRequest = null;
+            reject({
+              kind: 'spawn_error',
+              message: `Failed to write to Pi RPC stdin: ${err.message}`,
+              durationMs: Date.now() - started,
+              stdout: '',
+              stderr: '',
+            });
+          }
+        };
+
+        if (needsModelSwitch) {
+          // Send set_model before the prompt
+          try {
+            piProc.stdin.write(
+              JSON.stringify({ type: 'set_model', provider: effectiveProvider, modelId: effectiveModel }) + '\n',
+            );
+            currentModel = { provider: effectiveProvider, modelId: effectiveModel };
+            console.log(`[pi-bridge] Switched model to ${effectiveProvider}/${effectiveModel}`);
+            // Give Pi a moment to process the model switch, then send the prompt
+            setTimeout(sendRequest, 50);
+          } catch (err) {
+            clearTimeout(currentRequest.timer);
+            currentRequest = null;
+            currentModel = null;
+            reject({
+              kind: 'spawn_error',
+              message: `Failed to write set_model to Pi RPC stdin: ${err.message}`,
+              durationMs: Date.now() - started,
+              stdout: '',
+              stderr: '',
+            });
+          }
+        } else {
+          sendRequest();
+        }
+      })
+      .catch((err) => {
+        reject({
+          kind: 'rpc_not_ready',
+          message: err.message || 'Pi RPC process not ready',
+          durationMs: 0,
+          stdout: '',
+          stderr: '',
+        });
+      });
+  });
+
+// ---------------------------------------------------------------------------
+// Route handlers
+// ---------------------------------------------------------------------------
 
 const handleHealth = (req, res) => {
   json(res, 200, {
-    status: 'degraded',
+    status: piProcReady ? 'degraded' : 'degraded',
     transport: 'http',
+    mode: 'rpc',
+    piProcReady,
     endpointBase: `http://${config.host}:${config.port}`,
     checkedAt: nowIso(),
     latencyMs: 0,
@@ -279,11 +487,14 @@ const handleHealth = (req, res) => {
     piCliJs: process.env.PI_BRIDGE_PI_COMMAND ? undefined : config.piCliJs,
     piProvider: config.piProvider,
     piModel: config.piModel,
+    currentModel: currentModel ? `${currentModel.provider}/${currentModel.modelId}` : `${config.piProvider}/${config.piModel}`,
     safeDefaults: {
-      toolsDisabled: process.env.PI_BRIDGE_ALLOW_TOOLS !== '1',
-      extensionsDisabled: process.env.PI_BRIDGE_ALLOW_EXTENSIONS !== '1',
-      skillsDisabled: process.env.PI_BRIDGE_ALLOW_SKILLS !== '1',
-      contextFilesDisabled: process.env.PI_BRIDGE_ALLOW_CONTEXT_FILES !== '1',
+      toolsDisabled: process.env.PI_BRIDGE_ALLOW_TOOLS === '1' ? false : process.env.PI_BRIDGE_DISABLE_TOOLS === '1',
+      extensionsDisabled: process.env.PI_BRIDGE_ALLOW_EXTENSIONS === '1' ? false : process.env.PI_BRIDGE_DISABLE_EXTENSIONS === '1',
+      skillsDisabled: process.env.PI_BRIDGE_ALLOW_SKILLS === '1' ? false : process.env.PI_BRIDGE_DISABLE_SKILLS === '1',
+      promptTemplatesDisabled: process.env.PI_BRIDGE_ALLOW_PROMPT_TEMPLATES === '1' ? false : process.env.PI_BRIDGE_DISABLE_PROMPT_TEMPLATES === '1',
+      themesDisabled: process.env.PI_BRIDGE_ALLOW_THEMES === '1' ? false : process.env.PI_BRIDGE_DISABLE_THEMES === '1',
+      contextFilesDisabled: process.env.PI_BRIDGE_ALLOW_CONTEXT_FILES === '1' ? false : process.env.PI_BRIDGE_DISABLE_CONTEXT_FILES === '1',
       sessionDisabled: true,
     },
     activePiCalls,
@@ -316,15 +527,20 @@ const handleAgentMessage = async (req, res) => {
     return;
   }
 
+  // Extract optional model/provider preference from request body
+  const requestedModel = typeof body.model === 'string' ? body.model : undefined;
+  const requestedProvider = typeof body.provider === 'string' ? body.provider : undefined;
+
   activePiCalls += 1;
   try {
-    const result = await invokePi(cleanMessage, body.context);
+    const result = await invokePi(cleanMessage, body.context, requestedModel, requestedProvider);
     const createdAt = nowIso();
+    const currentModelLabel = currentModel ? `${currentModel.provider}/${currentModel.modelId}` : `${config.piProvider}/${config.piModel}`;
     const audit = pushAudit({
       id: makeId('audit'),
       category: 'summary',
-      title: 'Pi CLI invoked',
-      detail: `pi -p completed in ${result.durationMs}ms with safe defaults ${process.env.PI_BRIDGE_ALLOW_TOOLS === '1' ? 'partly overridden' : 'enabled'}.`,
+      title: 'Pi RPC invoked',
+      detail: `pi --mode rpc completed in ${result.durationMs}ms (model: ${currentModelLabel}).`,
       source: 'Pi Code',
       createdAt,
     });
@@ -343,8 +559,9 @@ const handleAgentMessage = async (req, res) => {
       diagnostics: {
         durationMs: result.durationMs,
         stderr: result.stderr,
-        provider: config.piProvider,
-        model: config.piModel,
+        provider: currentModel ? currentModel.provider : config.piProvider,
+        model: currentModel ? currentModel.modelId : config.piModel,
+        mode: 'rpc',
       },
     });
   } catch (error) {
@@ -352,14 +569,14 @@ const handleAgentMessage = async (req, res) => {
     pushAudit({
       id: makeId('audit'),
       category: 'failure',
-      title: 'Pi CLI failed',
-      detail: error.message || 'Pi CLI invocation failed.',
+      title: 'Pi RPC failed',
+      detail: error.message || 'Pi RPC invocation failed.',
       source: 'Pi Code',
       createdAt,
     });
 
-    const status = error.kind === 'timeout' ? 504 : error.kind === 'empty_output' ? 502 : 502;
-    jsonError(res, status, error.kind || 'pi_failed', error.message || 'Pi CLI invocation failed', {
+    const status = error.kind === 'timeout' ? 504 : error.kind === 'empty_output' ? 502 : error.kind === 'rpc_crashed' ? 502 : 502;
+    jsonError(res, status, error.kind || 'pi_failed', error.message || 'Pi RPC invocation failed', {
       durationMs: error.durationMs,
       exitCode: error.exitCode,
       signal: error.signal,
@@ -502,11 +719,18 @@ server.on('error', (error) => {
   process.exitCode = 1;
 });
 
+// Start Pi RPC process before the HTTP server begins listening.
+// This gives the persistent Pi process time to initialize while
+// the HTTP server is coming up.
+console.log('[pi-bridge] Starting Pi RPC process...');
+startPiRpc();
+
 server.listen(config.port, config.host, () => {
   console.log(`[pi-bridge] Listening on http://${config.host}:${config.port}`);
   console.log(`[pi-bridge] Repo root: ${repoRoot}`);
   console.log(
-    `[pi-bridge] Pi command: ${config.piCommand}${process.env.PI_BRIDGE_PI_COMMAND ? '' : ` ${config.piCliJs}`} --provider ${config.piProvider} --model ${config.piModel}`,
+    `[pi-bridge] Pi command: ${config.piCommand}${process.env.PI_BRIDGE_PI_COMMAND ? '' : ` ${config.piCliJs}`} --mode rpc --provider ${config.piProvider} --model ${config.piModel} --thinking ${process.env.PI_BRIDGE_THINKING || 'off'}`,
   );
-  console.log('[pi-bridge] Safe defaults enabled. Set PI_BRIDGE_ALLOW_TOOLS=1 only if you explicitly want phone prompts to use Pi tools.');
+  console.log('[pi-bridge] Tools enabled. Set PI_BRIDGE_DISABLE_TOOLS=1 to disable.');
+  console.log('[pi-bridge] Model switching via request body { model: "...", provider: "..." } is available.');
 });

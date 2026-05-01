@@ -4,6 +4,7 @@ import { AuditTimeline } from '../components/AuditTimeline';
 import { CalmCard } from '../components/CalmCard';
 import { ConnectorRow } from '../components/ConnectorRow';
 import { LockedActuatorCard } from '../components/LockedActuatorCard';
+import { ModelPicker } from '../components/ModelPicker';
 import { SchedulerPanel } from '../components/SchedulerPanel';
 import { StatusPill } from '../components/StatusPill';
 import { ToggleRow } from '../components/ToggleRow';
@@ -56,6 +57,16 @@ export function SystemScreen() {
           onValueChange={actions.toggleSafeMode}
         />
         <Text style={styles.body}>Autonomy: {state.permission.autonomyLevel}. Blocked kinds: {state.permission.blockedKinds.join(', ')}.</Text>
+      </CalmCard>
+
+      <CalmCard style={styles.card}>
+        <Text style={styles.cardTitle}>Model</Text>
+        <Text style={styles.body}>Select the LLM model for the next Pi Code request.</Text>
+        <ModelPicker
+          selectedModel={state.selectedModel}
+          selectedProvider={state.selectedProvider}
+          onSelect={(model, provider) => actions.setModelPreference(model, provider)}
+        />
       </CalmCard>
 
       <LockedActuatorCard locked={state.permission.rootLocked} />

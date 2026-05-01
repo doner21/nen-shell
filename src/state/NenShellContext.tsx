@@ -56,16 +56,25 @@ export function NenShellProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'SEND_MESSAGE_REQUEST', message });
 
         try {
-          const result = await piBridge.sendAgentMessage({ message: clean, context: {} });
+          // Snap conversation history BEFORE SEND_MESSAGE_REQUEST appends the user message
+          const conversationSnapshot = [...state.messages];
+
+          const result = await piBridge.sendAgentMessage({
+            message: clean,
+            context: {},
+            conversation: conversationSnapshot,
+            ...(state.selectedModel ? { model: state.selectedModel } : {}),
+            ...(state.selectedProvider ? { provider: state.selectedProvider } : {}),
+          });
           dispatch({ type: 'SEND_MESSAGE_SUCCESS', result });
         } catch (error) {
-          const detail = error instanceof Error ? error.message : 'Unknown mock bridge failure.';
+          const detail = error instanceof Error ? error.message : 'Unknown bridge failure.';
           dispatch({
             type: 'SEND_MESSAGE_FAILURE',
             error: detail,
             audit: audit({
               category: 'failure',
-              title: 'Mock bridge turn failed',
+              title: 'Bridge turn failed',
               detail,
               source: 'Pi Code',
             }),
@@ -103,7 +112,7 @@ export function NenShellProvider({ children }: { children: ReactNode }) {
           reason: result.message,
           audit: audit({
             category: 'approval',
-            title: 'Mock approval recorded',
+            title: 'Approval recorded',
             detail: `${task.action.title}: ${result.message}`,
             source: task.action.source,
           }),
@@ -138,6 +147,19 @@ export function NenShellProvider({ children }: { children: ReactNode }) {
         });
       },
 
+      setSafeMode(enabled: boolean) {
+        dispatch({ type: 'SET_SAFE_MODE', enabled });
+        dispatch({
+          type: 'ADD_AUDIT',
+          entry: audit({
+            category: 'check',
+            title: 'Safe Mode changed',
+            detail: enabled ? 'Safe Mode was turned on.' : 'Safe Mode was turned off for review.',
+            source: 'System',
+          }),
+        });
+      },
+
       async refreshStatus() {
         const [bridgeHealth, scheduler] = await Promise.all([
           piBridge.getHealth(),
@@ -155,8 +177,44 @@ export function NenShellProvider({ children }: { children: ReactNode }) {
           }),
         });
       },
+
+      setModelPreference(model?: string, provider?: string) {
+        dispatch({ type: 'SET_MODEL_PREFERENCE', model, provider });
+        dispatch({
+          type: 'ADD_AUDIT',
+          entry: audit({
+            category: 'check',
+            title: 'Model preference updated',
+            detail: model
+              ? `Model set to ${model}${provider ? ` (${provider})` : ''}`
+              : 'Model preference cleared.',
+            source: 'System',
+          }),
+        });
+      },
+
+      async writeFile(filename: string, content: string) {
+        dispatch({ type: 'WRITE_FILE_REQUEST', filename, content });
+        try {
+          await piBridge.writeFile(filename, content);
+          dispatch({ type: 'WRITE_FILE_SUCCESS', filename });
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : 'Unknown file system error.';
+          dispatch({
+            type: 'WRITE_FILE_FAILURE',
+            filename,
+            error: detail,
+            audit: audit({
+              category: 'failure',
+              title: 'File write failed',
+              detail,
+              source: 'System',
+            }),
+          });
+        }
+      },
     }),
-    [state.permission.rootLocked, state.permission.safeMode],
+    [state.permission.rootLocked, state.permission.safeMode, state.selectedModel, state.selectedProvider],
   );
 
   return <NenShellContext.Provider value={{ state, actions }}>{children}</NenShellContext.Provider>;

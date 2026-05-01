@@ -1,5 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { BottomNav } from '../components/BottomNav';
@@ -14,6 +14,18 @@ import { colors } from '../theme/tokens';
 function ActiveScreen() {
   const { state, actions } = useNenShell();
   const pendingCount = selectPendingTasks(state).length;
+
+  const scrollRef = useRef<ScrollView>(null);
+
+  // Auto-scroll to bottom when new messages arrive (only on home tab)
+  useEffect(() => {
+    if (state.activeTab === 'home' && state.messages.length > 0) {
+      const timer = setTimeout(() => {
+        scrollRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [state.messages.length, state.activeTab]);
 
   const renderScreen = () => {
     switch (state.activeTab) {
@@ -34,7 +46,12 @@ function ActiveScreen() {
       <StatusBar style="light" />
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <View style={styles.frame}>
-          <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+          <ScrollView
+            ref={scrollRef}
+            style={styles.scroll}
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+          >
             {renderScreen()}
           </ScrollView>
           <BottomNav activeTab={state.activeTab} pendingCount={pendingCount} onChange={actions.setActiveTab} />

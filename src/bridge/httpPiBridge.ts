@@ -15,19 +15,21 @@ import {
 } from '../types/domain';
 import { makeId } from '../utils/ids';
 import { nowIso } from '../utils/time';
+import { File, Paths } from 'expo-file-system';
 import { mockPiBridge } from './mockPiBridge';
 import { ActionDecisionResult, PiBridgeClient, SendAgentMessageInput } from './piBridge.types';
 
-// Android emulators use 10.0.2.2 to reach a service running on the Windows host.
-// When testing on a physical phone, replace this with the host machine's LAN IP,
-// for example http://192.168.0.110:31415.
-const DEFAULT_PI_BRIDGE_BASE_URL = 'http://10.0.2.2:31415';
+// Pi Code bridge runs on the phone itself via Termux: http://127.0.0.1:31415.
+// Override with EXPO_PUBLIC_BRIDGE_URL for remote servers or emulators.
+const DEFAULT_PI_BRIDGE_BASE_URL =
+  process.env.EXPO_PUBLIC_BRIDGE_URL || 'http://127.0.0.1:31415';
 
 type HttpMethod = 'GET' | 'POST';
 
 type FetchJsonOptions = {
   method?: HttpMethod;
   body?: unknown;
+  timeoutMs?: number;
 };
 
 const actionKinds: ActionKind[] = [
@@ -97,23 +99,31 @@ const joinUrl = (baseUrl: string, path: string) => {
 };
 
 const createFetchJson = (baseUrl: string) => async (path: string, options: FetchJsonOptions = {}): Promise<unknown> => {
-  const response = await fetch(joinUrl(baseUrl, path), {
-    method: options.method ?? 'GET',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-    },
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Pi bridge ${path} returned HTTP ${response.status}`);
-  }
+  const controller = new AbortController();
+  const timeoutId = options.timeoutMs ? setTimeout(() => controller.abort(), options.timeoutMs) : undefined;
 
   try {
-    return await response.json();
-  } catch {
-    throw new Error(`Pi bridge ${path} returned invalid JSON`);
+    const response = await fetch(joinUrl(baseUrl, path), {
+      method: options.method ?? 'GET',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Pi bridge ${path} returned HTTP ${response.status}`);
+    }
+
+    try {
+      return await response.json();
+    } catch {
+      throw new Error(`Pi bridge ${path} returned invalid JSON`);
+    }
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
   }
 };
 
@@ -312,7 +322,7 @@ export const createHttpPiBridge = (baseUrl = DEFAULT_PI_BRIDGE_BASE_URL): PiBrid
     async getHealth(): Promise<BridgeHealth> {
       const startedAt = Date.now();
       try {
-        const payload = await fetchJson('/health');
+        const payload = await fetchJson('/health', { timeoutMs: 5000 });
         return normalizeHealth(payload, baseUrl, Date.now() - startedAt);
       } catch {
         return {
@@ -326,18 +336,17 @@ export const createHttpPiBridge = (baseUrl = DEFAULT_PI_BRIDGE_BASE_URL): PiBrid
     },
 
     async sendAgentMessage(input: SendAgentMessageInput): Promise<AgentTurnResult> {
-      try {
-        const payload = await fetchJson('/agent/message', {
-          method: 'POST',
-          body: {
-            message: input.message ?? input.text ?? '',
-            context: input.context ?? {},
-          },
-        });
-        return normalizeAgentTurn(payload) ?? mockPiBridge.sendAgentMessage(input);
-      } catch {
-        return mockPiBridge.sendAgentMessage(input);
-      }
+      const payload = await fetchJson('/agent/message', {
+        method: 'POST',
+        timeoutMs: 120000,
+        body: {
+          message: input.message ?? input.text ?? '',
+          context: input.context ?? {},
+          ...(input.model ? { model: input.model } : {}),
+          ...(input.provider ? { provider: input.provider } : {}),
+        },
+      });
+      return normalizeAgentTurn(payload) ?? mockPiBridge.sendAgentMessage(input);
     },
 
     async getAgentTasks(): Promise<AgentTask[]> {
@@ -387,6 +396,12 @@ export const createHttpPiBridge = (baseUrl = DEFAULT_PI_BRIDGE_BASE_URL): PiBrid
 
     async approveAction(task: ApprovalTask): Promise<ActionDecisionResult> {
       return client.approveAgentTask(task);
+    },
+
+    async writeFile(filename: string, content: string): Promise<void> {
+      const file = new File(Paths.document, filename);
+      file.create({ overwrite: true, intermediates: true });
+      file.write(content, { encoding: 'utf8' });
     },
 
     async rejectAction(task: ApprovalTask): Promise<ActionDecisionResult> {

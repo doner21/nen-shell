@@ -19,13 +19,13 @@ export function TasksScreen() {
         <Text style={styles.body}>Everything is mock-only. Risky sends and system movement are blocked while Safe Mode is on.</Text>
       </View>
 
-      <SafeModeBanner enabled={state.permission.safeMode} />
+      <SafeModeBanner enabled={state.permission.safeMode} onToggle={actions.toggleSafeMode} />
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Pending</Text>
         {pending.length === 0 ? <Text style={styles.empty}>No pending approvals. Send a Home message to create a suggested action.</Text> : null}
         {pending.map((task) => (
-          <ApprovalCard key={task.id} task={task} onApprove={actions.approveTask} onReject={actions.rejectTask} />
+          <ApprovalCard key={task.id} task={task} onApprove={actions.approveTask} onReject={actions.rejectTask} onDisableSafeMode={actions.toggleSafeMode} />
         ))}
       </View>
 
@@ -33,7 +33,7 @@ export function TasksScreen() {
         <Text style={styles.sectionTitle}>Completed, rejected, blocked</Text>
         {completed.length === 0 ? <Text style={styles.empty}>Decisions will settle here with audit evidence.</Text> : null}
         {completed.map((task) => (
-          <ApprovalCard key={task.id} task={task} onApprove={actions.approveTask} onReject={actions.rejectTask} />
+          <ApprovalCard key={task.id} task={task} onApprove={actions.approveTask} onReject={actions.rejectTask} onDisableSafeMode={actions.toggleSafeMode} />
         ))}
       </View>
     </View>

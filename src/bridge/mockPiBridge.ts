@@ -139,6 +139,11 @@ export const mockPiBridge: PiBridgeClient = {
     return this.approveAgentTask(task);
   },
 
+  async writeFile(_filename: string, _content: string): Promise<void> {
+    // Mock no-op: no real file system access in mock mode
+    return;
+  },
+
   async rejectAction(task: ApprovalTask): Promise<ActionDecisionResult> {
     return this.rejectAgentTask(task);
   },

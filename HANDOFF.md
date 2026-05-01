@@ -1,6 +1,20 @@
-# Nen Shell Handoff — Real Pi Code Chat Integration
+# Nen Shell Handoff — Real Pi Code Chat Integration (BRIDGE LIVE)
 
 ## Current state
+
+⚠️ **The bridge is live.** The mock Pi bridge has been replaced with a real HTTP bridge
+client (`src/bridge/httpPiBridge.ts`) that talks to a local host server
+(`tools/pi-bridge-server/server.cjs`) running Pi in `--mode rpc` (persistent
+deepseek-v4-flash process, ~750ms response time, no cold-start penalty).
+
+Validate bridge health:
+```powershell
+cd C:\Users\doner\nen-shell
+npm run bridge                           # Terminal 1
+powershell -Command "Invoke-RestMethod http://127.0.0.1:31415/health | ConvertTo-Json"
+```
+
+Look for `piProcReady: true`.
 
 Repository: `C:/Users/doner/nen-shell`
 
@@ -55,6 +69,19 @@ Optional soft keyboard setting while emulator is running:
 ```powershell
 adb shell settings put secure show_ime_with_hard_keyboard 1
 ```
+
+## Bridge backend
+
+The bridge server now defaults to **DeepSeek V4 Flash** with `--thinking off` for fast mobile responses. The Pi process runs via `--mode rpc` (persistent, no cold-start penalty).
+
+To switch providers, set env vars before `npm run bridge`:
+```powershell
+$env:PI_BRIDGE_PI_PROVIDER="deepseek"       # or google-gemini-cli, anthropic, openai-codex
+$env:PI_BRIDGE_PI_MODEL="deepseek-v4-flash"  # or deepseek-v4-pro, gemini-2.5-flash, etc.
+$env:PI_BRIDGE_THINKING="off"                # off | minimal | low | medium | high | xhigh
+```
+
+The user's DeepSeek API key is already configured in `~/.pi/agent/auth.json`.
 
 ## Important product invariant
 

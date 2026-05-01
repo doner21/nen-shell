@@ -116,6 +116,47 @@ export const shellReducer = (state: ShellState, action: ShellAction): ShellState
         },
       };
 
+    case 'SET_SAFE_MODE':
+      return {
+        ...state,
+        permission: {
+          ...state.permission,
+          safeMode: action.enabled,
+        },
+      };
+
+    case 'SET_MODEL_PREFERENCE':
+      return {
+        ...state,
+        ...(action.model !== undefined ? { selectedModel: action.model } : {}),
+        ...(action.provider !== undefined ? { selectedProvider: action.provider } : {}),
+      };
+
+    case 'WRITE_FILE_REQUEST':
+      return { ...state };
+
+    case 'WRITE_FILE_SUCCESS':
+      return {
+        ...state,
+        auditLog: sortAudit([
+          {
+            id: makeId('audit'),
+            category: 'check',
+            title: 'File written',
+            detail: `Successfully wrote to ${action.filename}.`,
+            source: 'System',
+            createdAt: nowIso(),
+          },
+          ...state.auditLog,
+        ]),
+      };
+
+    case 'WRITE_FILE_FAILURE':
+      return {
+        ...state,
+        auditLog: sortAudit([action.audit, ...state.auditLog]),
+      };
+
     case 'REFRESH_STATUS':
       return {
         ...state,

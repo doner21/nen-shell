@@ -8,7 +8,7 @@ import { SafeModeBanner } from '../components/SafeModeBanner';
 import { StatusPill } from '../components/StatusPill';
 import { useNenShell } from '../state/NenShellContext';
 import { selectLatestPendingAction } from '../state/selectors';
-import { colors, spacing, typography } from '../theme/tokens';
+import { colors, radius, spacing, typography } from '../theme/tokens';
 
 export function HomeScreen() {
   const { state, actions } = useNenShell();
@@ -23,7 +23,7 @@ export function HomeScreen() {
         <Text style={styles.summary}>{state.todaySummary}</Text>
       </View>
 
-      <SafeModeBanner enabled={state.permission.safeMode} />
+      <SafeModeBanner enabled={state.permission.safeMode} onToggle={actions.toggleSafeMode} />
 
       <View style={styles.metrics}>
         <MetricTile label="Messages" value={state.attentionCounts.messages} detail="need attention" />
@@ -48,17 +48,37 @@ export function HomeScreen() {
       </CalmCard>
 
       <CalmCard style={styles.stack}>
-        <Text style={styles.cardTitle}>Ask Pi Code through the mock bridge</Text>
+        <Text style={styles.cardTitle}>Ask Pi Code</Text>
         <AgentInput loading={state.agentLoading} onSend={actions.sendMessage} />
         {state.agentError ? <Text style={styles.error}>{state.agentError}</Text> : null}
       </CalmCard>
 
-      {state.latestReply ? (
-        <CalmCard style={styles.stack}>
-          <Text style={styles.cardTitle}>Latest mock reply</Text>
-          <Text style={styles.cardBody}>{state.latestReply.text}</Text>
-          <Text style={styles.muted}>{state.latestReply.summary}</Text>
-        </CalmCard>
+      {state.messages.length > 0 ? (
+        <View style={styles.conversation}>
+          <Text style={styles.sectionTitle}>Conversation</Text>
+          {state.messages.map((msg) => (
+            <View
+              key={msg.id}
+              style={[
+                styles.messageBubble,
+                msg.role === 'user' ? styles.userBubble : styles.assistantBubble,
+              ]}
+            >
+              <Text style={styles.messageRole}>
+                {msg.role === 'user' ? 'You' : 'Pi Code'}
+              </Text>
+              <Text
+                style={[
+                  styles.messageText,
+                  msg.role === 'user' ? styles.userText : styles.assistantText,
+                ]}
+                selectable={msg.role === 'assistant'}
+              >
+                {msg.text}
+              </Text>
+            </View>
+          ))}
+        </View>
       ) : null}
 
       {latestPending ? (
@@ -130,6 +150,50 @@ const styles = StyleSheet.create({
   muted: {
     color: colors.textMuted,
     fontSize: typography.small,
+  },
+  conversation: {
+    gap: spacing.md,
+  },
+  sectionTitle: {
+    color: colors.ivory,
+    fontSize: typography.subtitle,
+    fontWeight: '800',
+    marginBottom: spacing.xs,
+  },
+  messageBubble: {
+    padding: spacing.md,
+    borderRadius: radius.md,
+    maxWidth: '90%',
+    gap: spacing.xs,
+  },
+  userBubble: {
+    alignSelf: 'flex-end',
+    backgroundColor: colors.lifted,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  assistantBubble: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.graphite,
+    borderWidth: 1,
+    borderColor: colors.mossDim,
+  },
+  messageRole: {
+    color: colors.moss,
+    fontSize: typography.micro,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1.2,
+  },
+  messageText: {
+    fontSize: typography.body,
+    lineHeight: 22,
+  },
+  userText: {
+    color: colors.ivory,
+  },
+  assistantText: {
+    color: colors.textSecondary,
   },
   error: {
     color: colors.amber,

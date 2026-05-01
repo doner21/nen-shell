@@ -196,4 +196,6 @@ export type ShellState = {
   auditLog: AuditEntry[];
   agentLoading: boolean;
   agentError?: string;
+  selectedModel?: string;
+  selectedProvider?: string;
 };
